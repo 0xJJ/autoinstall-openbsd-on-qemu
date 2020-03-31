@@ -10,23 +10,32 @@
 #
 # - https://drewdevault.com/2018/09/10/Getting-started-with-qemu.html
 #
+# Remove generated files with
+#
+#   git clean -Xdf
+#
 # Copyright (c) 2020 Stefan Kreutz <mail@skreutz.com>
 
 set -o errexit
 set -o xtrace
 
-# Fail early if any necessary tools are missing.
-for c in curl qemu-img qemu-system-x86_64 rsync signify ssh
-do
-  command -v "$c" >/dev/null
-done
+# Create directories.
+mkdir -p http/pub/OpenBSD/6.6/amd64
+mkdir -p tftp/etc
 
-# Read the public ssh key to be installed in the guest.
-ssh_pub_key="$( cat ~/.ssh/id_rsa.pub )"
+# Create a default boot.conf if not exists.
+[ -e "boot.conf" ] || cat << EOF > boot.conf
+stty com0 115200
+set tty com0
+boot tftp:/bsd.rd
+EOF
+[ "$( readlink -f tftp/etc/boot.conf )" = "$( realpath boot.conf )" ] || \
+  ln -s ../../boot.conf tftp/etc/boot.conf
 
-# Generate a response file for unattended installation.
-mkdir -p http
-cat << EOF > http/install.conf
+# Create a default install.conf if not exists.
+[ -e "install.conf" ] || {
+  ssh_pub_key="$( cat ~/.ssh/id_rsa.pub )"
+  cat << EOF > install.conf
 Change the default console to com0 = yes
 Which speed should com0 use = 115200
 System hostname = openbsd-vm
@@ -40,49 +49,66 @@ What timezone are you in = UTC
 Location of sets = http
 HTTP Server = 10.0.2.2
 Unable to connect using https. Use http instead = yes
+URL to autopartitioning template for disklabel = http://10.0.2.2/disklabel.conf
 EOF
+  }
+[ "$( readlink -f http/install.conf )" = "$( realpath install.conf )" ] || \
+  ln -s ../install.conf http/install.conf
 
-# Download OpenBSD/amd64 6.6 distribution.
-[ -e openbsd-66-base.pub ] || curl --output openbsd-66-base.pub --silent https://ftp.openbsd.org/pub/OpenBSD/6.6/openbsd-66-base.pub
-( [ -d http/pub/OpenBSD/6.6/amd64 ] && ( cd http/pub/OpenBSD/6.6/amd64 && signify -C -q -p ../../../../../openbsd-66-base.pub -x SHA256.sig ) ) || {
+# Create a default disklabel(8) template if not exists.
+[ -e "disklabel.conf" ] || cat << EOF > disklabel.conf
+/ 150M-1G 5%
+swap 80M-2G 10%
+/tmp 120M-4G 8%
+/var 80M-4G 13%
+/usr 1500M-6G 10%
+/usr/X11R6 384M-1G 3%
+/usr/local 1G-20G 15%
+/usr/src 1300M-2G 2%
+/usr/obj 5G-6G 4%
+/home 1G-300G 30%
+EOF
+[ "$( readlink -f http/disklabel.conf )" = "$( realpath disklabel.conf )" ] || \
+  ln -s ../disklabel.conf http/disklabel.conf
+
+# Download OpenBSD's public signify(1) key.
+[ -e openbsd-66-base.pub ] || \
+  curl --output openbsd-66-base.pub --silent \
+    https://ftp.openbsd.org/pub/OpenBSD/6.6/openbsd-66-base.pub
+
+# Download and verify OpenBSD/amd64 6.6 distribution.
+( cd http/pub/OpenBSD/6.6/amd64 && signify -C -q -p ../../../../../openbsd-66-base.pub -x SHA256.sig 2>/dev/null ) || {
   mkdir -p http/pub/OpenBSD/6.6/amd64
-  rsync --recursive --delete --quiet rsync://ftp.halifax.rwth-aachen.de/openbsd/6.6/amd64/ http/pub/OpenBSD/6.6/amd64/
+  rsync --recursive --delete --quiet \
+    rsync://ftp.halifax.rwth-aachen.de/openbsd/6.6/amd64/ \
+    http/pub/OpenBSD/6.6/amd64/
   ( cd http/pub/OpenBSD/6.6/amd64 && signify -C -q -p ../../../../../openbsd-66-base.pub -x SHA256.sig )
 }
 
 # TODO: Start HTTP server.
-# sudo python3 -m http.server --directory http 80
+# sudo python3 -m http.server --directory http --bind 127.0.0.1 80
 
 # Collect files to be served over TFTP.
-mkdir -p tftp
-cmp -s http/pub/OpenBSD/6.6/amd64/pxeboot tftp/pxeboot || cp -a http/pub/OpenBSD/6.6/amd64/pxeboot tftp/pxeboot
-cmp -s http/pub/OpenBSD/6.6/amd64/bsd.rd tftp/bsd.rd || cp -a http/pub/OpenBSD/6.6/amd64/bsd.rd tftp/bsd.rd
-rm -f tftp/auto_install
-ln -s pxeboot tftp/auto_install
-
-# Create boot configuration.
-mkdir -p tftp/etc
-cat << EOF > tftp/etc/boot.conf
-stty com0 115200
-set tty com0
-boot tftp:/bsd.rd
-EOF
+[ "$( readlink -f tftp/auto_install )" = "$( realpath http/pub/OpenBSD/6.6/amd64/pxeboot )" ] || \
+  ln -s ../http/pub/OpenBSD/6.6/amd64/pxeboot tftp/auto_install
+[ "$( readlink -f tftp/bsd.rd )" = "$( realpath http/pub/OpenBSD/6.6/amd64/bsd.rd )" ] || \
+  ln -s ../http/pub/OpenBSD/6.6/amd64/bsd.rd tftp/bsd.rd
 
 # Create copy-on-write disk image.
-[ -e vm.qcow2 ] || qemu-img create -f qcow2 vm.qcow2 16G
+[ -e openbsd-66-vm.qcow2 ] || qemu-img create -f qcow2 openbsd-66-vm.qcow2 16G
 
 # Auto-install and start guest machine.
 #
-# network = 10.0.2.0/24
-# host    = 10.0.2.2
-# dns     = 10.0.2.3
-# guest   = 10.0.2.15-31
+# network    = 10.0.2.0/24
+# host       = 10.0.2.2
+# nameserver = 10.0.2.3
+# guest      = 10.0.2.15-31
 qemu-system-x86_64 \
   -enable-kvm \
   -m 2G \
   -device e1000,netdev=n1 \
-  -netdev user,id=n1,tftp=tftp,bootfile=auto_install,hostfwd=tcp::2222-:22 \
-  -drive file=vm.qcow2,media=disk,if=virtio \
+  -netdev user,id=n1,hostname=openbsd-vm,tftp=tftp,bootfile=auto_install,hostfwd=tcp::2222-:22 \
+  -drive file=openbsd-66-vm.qcow2,media=disk,if=virtio \
   -nographic
 
 # Connect with the following command:

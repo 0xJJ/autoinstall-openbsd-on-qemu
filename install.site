@@ -1,0 +1,5 @@
+#! /bin/ksh
+set -o errexit
+echo "https://cdn.openbsd.org/pub/OpenBSD" > /etc/installurl
+echo "permit nopass keepenv :wheel" > /etc/doas.conf
+#echo "syspatch && shutdown -r now" >> /etc/rc.firsttime

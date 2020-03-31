@@ -19,85 +19,49 @@
 set -o errexit
 set -o xtrace
 
-# Create directories.
-mkdir -p http/pub/OpenBSD/6.6/amd64
-mkdir -p tftp/etc
-
-# Create a default boot.conf if not exists.
-[ -e "boot.conf" ] || cat << EOF > boot.conf
-stty com0 115200
-set tty com0
-boot tftp:/bsd.rd
-EOF
-[ "$( readlink -f tftp/etc/boot.conf )" = "$( realpath boot.conf )" ] || \
-  ln -s ../../boot.conf tftp/etc/boot.conf
-
-# Create a default install.conf if not exists.
-[ -e "install.conf" ] || {
-  ssh_pub_key="$( cat ~/.ssh/id_rsa.pub )"
-  cat << EOF > install.conf
-Change the default console to com0 = yes
-Which speed should com0 use = 115200
-System hostname = openbsd-vm
-Password for root = *************
-Public ssh key for root account = ${ssh_pub_key}
-Allow root ssh login = prohibit-password
-Setup a user = puffy
-Password for user = *************
-Public ssh key for user = ${ssh_pub_key}
-What timezone are you in = UTC
-Location of sets = http
-HTTP Server = 10.0.2.2
-Unable to connect using https. Use http instead = yes
-URL to autopartitioning template for disklabel = http://10.0.2.2/disklabel.conf
-EOF
-  }
-[ "$( readlink -f http/install.conf )" = "$( realpath install.conf )" ] || \
-  ln -s ../install.conf http/install.conf
-
-# Create a default disklabel(8) template if not exists.
-[ -e "disklabel.conf" ] || cat << EOF > disklabel.conf
-/ 150M-1G 5%
-swap 80M-2G 10%
-/tmp 120M-4G 8%
-/var 80M-4G 13%
-/usr 1500M-6G 10%
-/usr/X11R6 384M-1G 3%
-/usr/local 1G-20G 15%
-/usr/src 1300M-2G 2%
-/usr/obj 5G-6G 4%
-/home 1G-300G 30%
-EOF
-[ "$( readlink -f http/disklabel.conf )" = "$( realpath disklabel.conf )" ] || \
-  ln -s ../disklabel.conf http/disklabel.conf
-
-# Download OpenBSD's public signify(1) key.
+# Download and verify OpenBSD/amd64 6.6 distribution.
+#
+# Note: rsync deletes superfluous files, e.g., the site66.tgz.
 [ -e openbsd-66-base.pub ] || \
   curl --output openbsd-66-base.pub --silent \
     https://ftp.openbsd.org/pub/OpenBSD/6.6/openbsd-66-base.pub
+mkdir -p http/pub/OpenBSD/6.6/amd64
+rsync --recursive --delete --quiet \
+  rsync://ftp.halifax.rwth-aachen.de/openbsd/6.6/amd64/ \
+  http/pub/OpenBSD/6.6/amd64/
+( cd http/pub/OpenBSD/6.6/amd64 && \
+  signify -C -q -p ../../../../../openbsd-66-base.pub -x SHA256.sig )
 
-# Download and verify OpenBSD/amd64 6.6 distribution.
-( cd http/pub/OpenBSD/6.6/amd64 && signify -C -q -p ../../../../../openbsd-66-base.pub -x SHA256.sig 2>/dev/null ) || {
-  mkdir -p http/pub/OpenBSD/6.6/amd64
-  rsync --recursive --delete --quiet \
-    rsync://ftp.halifax.rwth-aachen.de/openbsd/6.6/amd64/ \
-    http/pub/OpenBSD/6.6/amd64/
-  ( cd http/pub/OpenBSD/6.6/amd64 && signify -C -q -p ../../../../../openbsd-66-base.pub -x SHA256.sig )
+# Add a site-specific file set to patch the system at the end of the
+# installation -- and optionally on the first boot.
+#
+# Note: Afterwards, signify will fail to verify the integrity of the
+# distribution.
+tar -czf http/pub/OpenBSD/6.6/amd64/site66.tgz install.site
+( cd http/pub/OpenBSD/6.6/amd64 && ls -l > index.txt )
+
+# Add public ssh key to install.conf.
+grep -q -e "^Public ssh key" http/install.conf || {
+  ssh_pub_key="$( cat ~/.ssh/id_rsa.pub )"
+  echo "Public ssh key for root account = ${ssh_pub_key}" >> http/install.conf
+  echo "Public ssh key for user = ${ssh_pub_key}" >> http/install.conf
 }
 
-# TODO: Start HTTP server.
+# TODO: Start HTTP server automatically in the background.
 # sudo python3 -m http.server --directory http --bind 127.0.0.1 80
-
-# Collect files to be served over TFTP.
-[ "$( readlink -f tftp/auto_install )" = "$( realpath http/pub/OpenBSD/6.6/amd64/pxeboot )" ] || \
-  ln -s ../http/pub/OpenBSD/6.6/amd64/pxeboot tftp/auto_install
-[ "$( readlink -f tftp/bsd.rd )" = "$( realpath http/pub/OpenBSD/6.6/amd64/bsd.rd )" ] || \
-  ln -s ../http/pub/OpenBSD/6.6/amd64/bsd.rd tftp/bsd.rd
 
 # Create copy-on-write disk image.
 [ -e openbsd-66-vm.qcow2 ] || qemu-img create -f qcow2 openbsd-66-vm.qcow2 16G
 
-# Auto-install and start guest machine.
+# Auto-install guest machine.
+#
+# Connect with
+#
+#   ssh -o "StrictHostKeyChecking no" -o "UserKnownHostsFile /dev/null" -o "Port 2222" root@127.0.0.1
+#
+# Stop guest machine with C-a x
+#
+# Show help with C-a h
 #
 # network    = 10.0.2.0/24
 # host       = 10.0.2.2
@@ -105,38 +69,8 @@ EOF
 # guest      = 10.0.2.15-31
 qemu-system-x86_64 \
   -enable-kvm \
-  -m 2G \
+  -m 4G \
   -device e1000,netdev=n1 \
   -netdev user,id=n1,hostname=openbsd-vm,tftp=tftp,bootfile=auto_install,hostfwd=tcp::2222-:22 \
   -drive file=openbsd-66-vm.qcow2,media=disk,if=virtio \
   -nographic
-
-# Connect with the following command:
-#
-#   ssh -o "StrictHostKeyChecking no" -o "UserKnownHostsFile /dev/null" -o "Port 2222" root@127.0.0.1
-#
-# Execute a command (add -T):
-#
-#   ssh -o "StrictHostKeyChecking no" -o "UserKnownHostsFile /dev/null" -o "Port 2222" -T root@127.0.0.1 "uptime"
-#
-# Execute a heredoc:
-#
-#   ssh -o "StrictHostKeyChecking no" -o "UserKnownHostsFile /dev/null" -o "Port 2222" -T root@127.0.0.1 << SSHEOF
-#     set -o errexit
-#     uptime
-#   SSHEOF
-#
-# Copy a file:
-#
-#   scp -o "StrictHostKeyChecking no" -o "UserKnownHostsFile /dev/null" -o "Port 2222" -r notes.txt root@127.0.0.1:
-#
-# Stop guest machine with C-a x
-#
-# Show help with C-a h
-
-# TODO: Install a site-specific file set to apply the following patches.
-#
-# echo 'https://cdn.openbsd.org/pub/OpenBSD' > /etc/installurl
-# echo 'permit keepenv :wheel' > /etc/doas.conf
-# syspatch
-# shutdown -r now

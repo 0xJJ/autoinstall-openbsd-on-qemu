@@ -1,7 +1,3 @@
-boot.conf
-disklabel.conf
-http
-install.conf
+http/pub/
 openbsd-66-base.pub
 openbsd-66-vm.qcow2
-tftp

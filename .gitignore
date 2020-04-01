@@ -1,4 +1,3 @@
-http/pub/
-http/install.conf
-openbsd-66-base.pub
+mirror
 openbsd-66-vm.qcow2
+tftp

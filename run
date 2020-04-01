@@ -41,9 +41,8 @@ tar -czf http/pub/OpenBSD/6.6/amd64/site66.tgz install.site
 ( cd http/pub/OpenBSD/6.6/amd64 && ls -l > index.txt )
 
 # Add public ssh key to install.conf.
-grep -q -e "^Public ssh key" http/install.conf || {
+grep -q -e "^Public ssh key for user =" http/install.conf || {
   ssh_pub_key="$( cat ~/.ssh/id_rsa.pub )"
-  echo "Public ssh key for root account = ${ssh_pub_key}" >> http/install.conf
   echo "Public ssh key for user = ${ssh_pub_key}" >> http/install.conf
 }
 

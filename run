@@ -3,10 +3,12 @@
 # Auto-install OpenBSD/amd64 6.6 to a QEMU guest machine. A POSIX shell script
 # intended to run headless, ssh-controlled integration tests.
 #
-# Run the following command to serve the automatically created directory mirror
-# at http://127.0.0.1 (port 80):
+# Run the following command to serve the OpenBSD mirror at http://127.0.0.1
+# (port 80):
 #
-#   sudo python3 -m http.server --directory mirror --bind 127.0.0.1 80
+#   sudo python3 -m http.server \
+#     --directory ./openbsd-vm/mirror \
+#     --bind 127.0.0.1 80
 #
 # Pass the following options to ssh or scp to connect to the guest machine:
 #
@@ -14,6 +16,17 @@
 #     -o "StrictHostKeyChecking no" \
 #     -o "UserKnownHostsFile /dev/null" \
 #     -o "Port 2222" \
+#     puffy@127.0.0.1
+#
+# For example, the following command forwards port 8080 on the host to port 80
+# on the guest:
+#
+#   ssh \
+#     -o "StrictHostKeyChecking no" \
+#     -o "UserKnownHostsFile /dev/null" \
+#     -o "Port 2222" \
+#     -N \
+#     -L 127.0.0.1:8080:127.0.0.1:80 \
 #     puffy@127.0.0.1
 #
 # Press C-a x to stop the guest machine. Press C-a h to show other options.
@@ -28,11 +41,6 @@
 # Port forwardings:
 #
 #   host:2222 -> guest:22
-#   host:8080 -> guest:80
-#
-# Run the following command to clean up any mess created by this script :)
-#
-#   git clean -Xdf
 #
 # Copyright (c) 2020 Stefan Kreutz <mail@skreutz.com>
 
@@ -45,102 +53,86 @@ DISK_SIZE="${DISK_SIZE-20G}"
 CPU_COUNT="${CPU_COUNT-1}"
 MEMORY_SIZE="${MEMORY_SIZE-4G}"
 
-# Download and verify OpenBSD/amd64 6.6 installation images and file sets.
-[ -d mirror ] || {
-  mkdir -p mirror-tmp/pub/OpenBSD/6.6
-  [ -e mirror-tmp/pub/OpenBSD/6.6/openbsd-66-base.pub ] || \
-    curl --output mirror-tmp/pub/OpenBSD/6.6/openbsd-66-base.pub --silent \
+# Remove existing virtual machine if configuration changed.
+if [ -e openbsd-66-vm.qcow2 ] ;
+then
+  vm_created="$( stat -c %W openbsd-66-vm.qcow2 )"
+  for f in boot.conf disklabel install.conf install.site
+  do
+    if [ "${vm_created}" -lt "$( stat -c %Y "$f" )" ] ;
+    then
+      ( >&2 printf "%s changed. Recreating virtual machine." "$f" )
+      rm openbsd-66-vm.qcow2
+    fi
+  done
+fi
+
+if [ ! -e openbsd-66-vm.qcow2 ] ;
+then
+
+  # Download and verify OpenBSD/amd64 6.6 installation images and file sets.
+  mkdir -p .openbsd-vm/mirror/pub/OpenBSD/6.6
+  if [ ! -e .openbsd-vm/mirror/pub/OpenBSD/6.6/openbsd-66-base.pub ] ;
+  then
+    curl \
+      --output .openbsd-vm/mirror/pub/OpenBSD/6.6/openbsd-66-base.pub \
+      --silent \
       https://ftp.openbsd.org/pub/OpenBSD/6.6/openbsd-66-base.pub
-  mkdir -p mirror-tmp/pub/OpenBSD/6.6/amd64
-  rsync --recursive --delete --quiet \
-    rsync://ftp.halifax.rwth-aachen.de/openbsd/6.6/amd64/ \
-    mirror-tmp/pub/OpenBSD/6.6/amd64/
-  ( cd mirror-tmp/pub/OpenBSD/6.6/amd64 && \
-    signify -C -q -p ../openbsd-66-base.pub -x SHA256.sig )
-  mv mirror-tmp mirror
-}
+  fi
+  if [ ! -d .openbsd-vm/mirror/pub/OpenBSD/6.6/amd64 ] ;
+  then
+    mkdir -p .openbsd-vm/tmp
+    rsync --recursive --delete --quiet \
+      rsync://ftp.halifax.rwth-aachen.de/openbsd/6.6/amd64/ \
+      .openbsd-vm/tmp/
+    ( cd .openbsd-vm/tmp && \
+      signify -C -q -p ../mirror/pub/OpenBSD/6.6/openbsd-66-base.pub -x SHA256.sig )
+    mv .openbsd-vm/tmp .openbsd-vm/mirror/pub/OpenBSD/6.6/amd64
+  fi
 
-# Create default site-specific file set.
-mkdir -p mirror/pub/OpenBSD/6.6/amd64/site66
-[ -d mirror/pub/OpenBSD/6.6/amd64/site66/install.site ] || \
-  cat << EOF > mirror/pub/OpenBSD/6.6/amd64/site66/install.site
-#! /bin/ksh
-set -o errexit
-echo "https://cdn.openbsd.org/pub/OpenBSD" > /etc/installurl
-echo "permit nopass keepenv :wheel" > /etc/doas.conf
-#echo "syspatch && shutdown -r now" >> /etc/rc.firsttime
-EOF
-chmod +x mirror/pub/OpenBSD/6.6/amd64/site66/install.site
+  # Create site-specific file set.
+  if [ ! -x install.site ] ;
+  then
+    chmod +x install.site
+  fi
+  rm -f .openbsd-vm/mirror/pub/OpenBSD/6.6/amd64/site66.tgz
+  tar -czf .openbsd-vm/mirror/pub/OpenBSD/6.6/amd64/site66.tgz install.site
+  ( cd .openbsd-vm/mirror/pub/OpenBSD/6.6/amd64 && ls -l > index.txt )
 
-# Package site-specific file set.
-( cd mirror/pub/OpenBSD/6.6/amd64 && \
-  rm -f site66.tgz && \
-  cd site66 && \
-  tar -czf ../site66.tgz . && \
-  cd .. && \
-  ls -l > index.txt )
+  # Add public ssh key to install.conf.
+  cp install.conf .openbsd-vm/mirror/
+  if ! grep -q -e "^Public ssh key for user" install.conf ;
+  then
+    ssh_pub_key="$( cat ~/.ssh/id_rsa.pub )"
+    echo "Public ssh key for user = ${ssh_pub_key}" \
+      >> .openbsd-vm/mirror/install.conf
+  fi
 
-# Create default install.conf.
-ssh_pub_key="$( cat ~/.ssh/id_rsa.pub )"
-[ -e mirror/install.conf ] || cat << EOF > mirror/install.conf
-Change the default console to com0 = yes
-Which speed should com0 use = 115200
-System hostname = openbsd-vm
-Password for root = *************
-Allow root ssh login = no
-Setup a user = puffy
-Password for user = *************
-Public ssh key for user = ${ssh_pub_key}
-What timezone are you in = UTC
-Location of sets = http
-HTTP Server = 10.0.2.2
-Unable to connect using https. Use http instead = yes
-URL to autopartitioning template for disklabel = http://10.0.2.2/disklabel
-Set name(s) = site66.tgz
-Checksum test for site66.tgz failed. Continue anyway = yes
-Unverified sets: site66.tgz. Continue without verification = yes
-EOF
+  # Copy disklabel template.
+  cp disklabel .openbsd-vm/mirror/
 
-# Create default disklabel template.
-[ -e mirror/disklabel ] || cat << EOF > mirror/disklabel
-/            2G
-swap         1G
-/tmp         1G
-/var         1G
-/var/www     1G
-/usr         2G
-/usr/X11R6 500M
-/usr/local   4G
-/usr/src     1M
-/usr/obj     1M
-/home        4G
-EOF
+  # Wait until the HTTP server is online.
+  #
+  # TODO: Serve HTTP and TFTP from another virtual machine to remove the
+  # necissity to bind to a privileged port.
+  while [ ! "$( curl --silent --location --write-out '%{http_code}\n' --output /dev/null http://127.0.0.1/install.conf )" = 200 ] ;
+  do
+    ( >&2 printf "Please serve the directory ./openbsd-vm/mirror at http://127.0.0.1 (port 80).\n" )
+    sleep 5
+  done
 
-# Wait until the HTTP server is online.
-while [ ! "$( curl --silent --location --write-out '%{http_code}\n' --output /dev/null http://127.0.0.1/install.conf )" = 200 ] ;
-do
-  ( >&2 printf "Please serve the directory mirror at http://127.0.0.1 (port 80).\n" )
-  sleep 5
-done
+  # Collect files to be served over TFTP.
+  rm -rf .openbsd-vm/tftp
+  mkdir .openbsd-vm/tftp
+  ln -s ../mirror/pub/OpenBSD/6.6/amd64/pxeboot .openbsd-vm/tftp/auto_install
+  ln -s ../mirror/pub/OpenBSD/6.6/amd64/bsd.rd .openbsd-vm/tftp/bsd.rd
+  mkdir .openbsd-vm/tftp/etc
+  cp boot.conf .openbsd-vm/tftp/etc/
 
-# Collect files to be served over TFTP.
-mkdir -p tftp
-[ -e tftp/auto_install ] || \
-  ln -s ../mirror/pub/OpenBSD/6.6/amd64/pxeboot tftp/auto_install
-[ -e tftp/bsd.rd ] || \
-  ln -s ../mirror/pub/OpenBSD/6.6/amd64/bsd.rd tftp/bsd.rd
-
-# Create default boot.conf.
-mkdir -p tftp/etc
-[ -e tftp/etc/boot.conf ] || cat << EOF > tftp/etc/boot.conf
-stty com0 115200
-set tty com0
-boot tftp:/bsd.rd
-EOF
-
-# Create copy-on-write disk image.
-[ -e openbsd-66-vm.qcow2 ] || \
+  # Create copy-on-write disk image.
   qemu-img create -f qcow2 openbsd-66-vm.qcow2 "${DISK_SIZE}"
+
+fi
 
 # Auto-install guest machine.
 qemu-system-x86_64 \
@@ -148,6 +140,6 @@ qemu-system-x86_64 \
   -m "${MEMORY_SIZE}" \
   -smp "cpus=${CPU_COUNT}" \
   -device e1000,netdev=n1 \
-  -netdev user,id=n1,hostname=openbsd-vm,tftp=tftp,bootfile=auto_install,hostfwd=tcp::2222-:22,hostfwd=tcp::8080-:80 \
+  -netdev user,id=n1,hostname=openbsd-vm,tftp=.openbsd-vm/tftp,bootfile=auto_install,hostfwd=tcp::2222-:22 \
   -drive file=openbsd-66-vm.qcow2,media=disk,if=virtio \
   -nographic

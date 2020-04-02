@@ -1,4 +1,2 @@
-mirror
-mirror-tmp
+.openbsd-vm
 openbsd-66-vm.qcow2
-tftp

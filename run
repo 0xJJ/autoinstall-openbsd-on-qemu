@@ -103,7 +103,7 @@ EOF
 
 # Create default disklabel template.
 [ -e mirror/disklabel ] || cat << EOF > mirror/disklabel
-/          500M
+/            2G
 swap         1G
 /tmp         1G
 /var         1G

@@ -21,6 +21,8 @@
 # For example, the following command forwards port 8080 on the host to port 80
 # on the guest:
 #
+# FIXME: Configure or disable pf
+#
 #   ssh \
 #     -o "StrictHostKeyChecking no" \
 #     -o "UserKnownHostsFile /dev/null" \
@@ -49,25 +51,26 @@ set -o nounset
 set -o xtrace
 
 # Set parameters.
+VM_FILE="${VM_FILE-openbsd-vm.qcow2}"
 DISK_SIZE="${DISK_SIZE-20G}"
 CPU_COUNT="${CPU_COUNT-1}"
 MEMORY_SIZE="${MEMORY_SIZE-4G}"
 
 # Remove existing virtual machine if configuration changed.
-if [ -e openbsd-66-vm.qcow2 ] ;
+if [ -e "${VM_FILE}" ] ;
 then
-  vm_created="$( stat -c %W openbsd-66-vm.qcow2 )"
+  vm_created="$( stat -c %W "${VM_FILE}" )"
   for f in boot.conf disklabel install.conf install.site
   do
     if [ "${vm_created}" -lt "$( stat -c %Y "$f" )" ] ;
     then
       ( >&2 printf "%s changed. Recreating virtual machine." "$f" )
-      rm openbsd-66-vm.qcow2
+      rm "${VM_FILE}"
     fi
   done
 fi
 
-if [ ! -e openbsd-66-vm.qcow2 ] ;
+if [ ! -e "${VM_FILE}" ] ;
 then
 
   # Download and verify OpenBSD/amd64 6.6 installation images and file sets.
@@ -130,7 +133,7 @@ then
   cp boot.conf .openbsd-vm/tftp/etc/
 
   # Create copy-on-write disk image.
-  qemu-img create -f qcow2 openbsd-66-vm.qcow2 "${DISK_SIZE}"
+  qemu-img create -f qcow2 "${VM_FILE}" "${DISK_SIZE}"
 
 fi
 
@@ -141,5 +144,5 @@ qemu-system-x86_64 \
   -smp "cpus=${CPU_COUNT}" \
   -device e1000,netdev=n1 \
   -netdev user,id=n1,hostname=openbsd-vm,tftp=.openbsd-vm/tftp,bootfile=auto_install,hostfwd=tcp::2222-:22 \
-  -drive file=openbsd-66-vm.qcow2,media=disk,if=virtio \
+  -drive "file=${VM_FILE},media=disk,if=virtio" \
   -nographic

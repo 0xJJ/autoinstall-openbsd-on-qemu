@@ -1,0 +1,51 @@
+#! /bin/sh
+
+set -o errexit
+set -o xtrace
+
+revision="$( git rev-parse --short HEAD )"
+
+if [ ! -e "kapho-${revision}.tar.gz" ] ;
+then
+  git archive \
+    --prefix="kapho-${revision}/" \
+    --output="kapho-${revision}.tar.gz" \
+    "${revision}"
+fi
+
+scp \
+  -o "StrictHostKeyChecking no" \
+  -o "UserKnownHostsFile /dev/null" \
+  -o "Port 2222" \
+  "kapho-${revision}.tar.gz" \
+  puffy@127.0.0.1:
+
+# shellcheck disable=SC2087
+ssh \
+  -o "StrictHostKeyChecking no" \
+  -o "UserKnownHostsFile /dev/null" \
+  -o "Port 2222" \
+  -T \
+  puffy@127.0.0.1 << SSHEOF
+set -o errexit
+set -o xtrace
+
+rm -rf "kapho-${revision}"
+tar -xzf "kapho-${revision}.tar.gz"
+cd "kapho-${revision}"
+doas ./script/openbsd/setup
+CABAL_JOBS=4 ./script/openbsd/build
+doas ./script/openbsd/install
+doas rcctl ls on | grep -q kaphod && exit 0
+cat test_user.sql | doas -u _kapho sqlite3 /var/www/kapho/database.sqlite3
+cat << EOF | doas tee /etc/kapho/kaphod.conf >/dev/null
+port = "80"
+secureCookies = False
+thumbnailGeneratorThreadLimit = 4
+EOF
+doas rcctl set kaphod status on
+doas rcctl start kaphod
+
+# FIXME: Need to restart kaphod once to resolve connection refused error.
+doas rcctl restart kaphod
+SSHEOF

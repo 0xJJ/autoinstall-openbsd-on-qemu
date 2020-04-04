@@ -1,7 +1,6 @@
 #! /bin/sh
 
-# Auto-install OpenBSD/amd64 6.6 to a QEMU guest machine. A POSIX shell script
-# intended to run headless, ssh-controlled integration tests.
+# Auto-install OpenBSD/amd64 6.6 to a QEMU guest machine.
 #
 # Run the following command to serve the OpenBSD mirror at http://127.0.0.1
 # (port 80):
@@ -20,8 +19,6 @@
 #
 # For example, the following command forwards port 8080 on the host to port 80
 # on the guest:
-#
-# FIXME: Configure or disable pf
 #
 #   ssh \
 #     -o "StrictHostKeyChecking no" \
@@ -52,8 +49,8 @@ set -o xtrace
 
 # Set parameters.
 VM_FILE="${VM_FILE-openbsd-vm.qcow2}"
-DISK_SIZE="${DISK_SIZE-20G}"
-CPU_COUNT="${CPU_COUNT-1}"
+DISK_SIZE="${DISK_SIZE-160G}"
+CPU_COUNT="${CPU_COUNT-6}"
 MEMORY_SIZE="${MEMORY_SIZE-4G}"
 
 # Remove existing virtual machine if configuration changed.
@@ -117,7 +114,8 @@ then
   # Wait until the HTTP server is online.
   #
   # TODO: Serve HTTP and TFTP from another virtual machine to remove the
-  # necissity to bind to a privileged port.
+  # necessity to bind to a privileged port. Maybe use Linux' tftpd from Arch
+  # Linux package tftp-hpa. Redirect ports using qemu.
   while [ ! "$( curl --silent --location --write-out '%{http_code}\n' --output /dev/null http://127.0.0.1/install.conf )" = 200 ] ;
   do
     ( >&2 printf "Please serve the directory ./openbsd-vm/mirror at http://127.0.0.1 (port 80).\n" )

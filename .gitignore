@@ -1,2 +1,4 @@
-.openbsd-vm
-openbsd-vm.qcow2
+mirror
+tftp
+site
+disk.qcow2

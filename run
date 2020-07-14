@@ -1,49 +1,64 @@
 #! /bin/sh
 
-# Auto-install OpenBSD/amd64 6.7 to a copy-on-write disk image using QEMU.
+# Auto-install OpenBSD/amd64 6.7 on QEMU.
 #
 # Copyright (c) 2020 Stefan Kreutz <mail@skreutz.com>
 
 set -o errexit
 set -o nounset
-set -o xtrace
 
-# Set default parameters.
+# Accept parameters from environment.
+SSH_KEY="${SSH_KEY-${HOME}/.ssh/id_rsa.pub}"
+HTTPS_MIRROR="${HTTPS_MIRROR-https://ftp.openbsd.org/pub/OpenBSD/}"
+RSYNC_MIRROR="${RSYNC_MIRROR-rsync://ftp.halifax.rwth-aachen.de/openbsd/}"
 DISK_FILE="${DISK_FILE-disk.qcow2}"
-DISK_SIZE="${DISK_SIZE-160G}"
-CPU_COUNT="${CPU_COUNT-6}"
+DISK_SIZE="${DISK_SIZE-24G}"
+CPU_COUNT="${CPU_COUNT-4}"
 MEMORY_SIZE="${MEMORY_SIZE-4G}"
 
-# Check dependencies.
+# Fail early on missing dependencies.
 for cmd in qemu-img qemu-system-x86_64 curl signify rsync ssh socat ;
 do
-  command -v "${cmd}"
+  if ! command -v "${cmd}" >/dev/null ;
+  then
+    ( >&2 printf "command not found: %s\\n" "${cmd}" )
+    exit 1
+  fi
 done
 
-# Download and verify official installation image and file sets.
+# Fetch base public key from trusted HTTPS mirror.
 mkdir -p mirror/pub/OpenBSD/6.7
 if [ ! -e mirror/pub/OpenBSD/6.7/openbsd-67-base.pub ] ;
 then
   curl \
-    --output mirror/pub/OpenBSD/6.7/openbsd-67-base.pub \
     --silent \
-    https://ftp.openbsd.org/pub/OpenBSD/6.7/openbsd-67-base.pub
+    --output mirror/pub/OpenBSD/6.7/openbsd-67-base.pub \
+    "${HTTPS_MIRROR}6.7/openbsd-67-base.pub"
 fi
+
+# Fetch kernel, PXE bootstrap program, and file sets from untrusted
+# rsync mirror.
 if [ ! -d mirror/pub/OpenBSD/6.7/amd64 ] ;
 then
   mkdir -p tmp
   rsync --recursive --delete --quiet \
-    rsync://ftp.halifax.rwth-aachen.de/openbsd/6.7/amd64/ \
+    "${RSYNC_MIRROR}6.7/amd64/SHA256" \
+    "${RSYNC_MIRROR}6.7/amd64/SHA256.sig" \
+    "${RSYNC_MIRROR}6.7/amd64/bsd" \
+    "${RSYNC_MIRROR}6.7/amd64/bsd.*" \
+    "${RSYNC_MIRROR}6.7/amd64/pxeboot" \
+    "${RSYNC_MIRROR}6.7/amd64/*67.tgz" \
     tmp/
-  ( cd tmp && \
-    signify -C -q -p ../mirror/pub/OpenBSD/6.7/openbsd-67-base.pub -x SHA256.sig )
+  ( cd tmp && signify -C -q \
+      -p ../mirror/pub/OpenBSD/6.7/openbsd-67-base.pub \
+      -x SHA256.sig \
+      -- bsd bsd.* pxeboot *67.tgz )
   mv tmp mirror/pub/OpenBSD/6.7/amd64
 fi
 
 # Create autoinstall configuration if not exists.
 if [ ! -e mirror/install.conf ] ;
 then
-  ssh_pub_key="$( cat ~/.ssh/id_rsa.pub )"
   cat << EOF > mirror/install.conf
 Change the default console to com0 = yes
 Which speed should com0 use = 115200
@@ -52,7 +67,7 @@ Password for root = *************
 Allow root ssh login = no
 Setup a user = puffy
 Password for user = *************
-Public ssh key for user = ${ssh_pub_key}
+Public ssh key for user = $( cat "${SSH_KEY}" )
 What timezone are you in = UTC
 Location of sets = http
 HTTP Server = 10.0.2.1
@@ -72,7 +87,6 @@ then
 swap         8G
 /tmp         1G
 /var         1G
-/var/www   100G
 /usr         2G
 /usr/X11R6 500M
 /usr/local   4G

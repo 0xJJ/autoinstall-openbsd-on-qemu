@@ -17,9 +17,9 @@ CPU_COUNT="${CPU_COUNT-4}"
 MEMORY_SIZE="${MEMORY_SIZE-4G}"
 
 # Fail early on missing dependencies.
-for cmd in qemu-img qemu-system-x86_64 curl signify rsync ssh socat ;
+for cmd in qemu-img qemu-system-x86_64 curl signify rsync ssh socat
 do
-  if ! command -v "${cmd}" >/dev/null ;
+  if ! command -v "${cmd}" >/dev/null
   then
     ( >&2 printf "command not found: %s\\n" "${cmd}" )
     exit 1
@@ -28,19 +28,21 @@ done
 
 # Fetch base public key from trusted HTTPS mirror.
 mkdir -p mirror/pub/OpenBSD/6.7
-if [ ! -e mirror/pub/OpenBSD/6.7/openbsd-67-base.pub ] ;
+if [ ! -e mirror/pub/OpenBSD/6.7/openbsd-67-base.pub ]
 then
   curl \
     --silent \
     --output mirror/pub/OpenBSD/6.7/openbsd-67-base.pub \
     "${HTTPS_MIRROR}6.7/openbsd-67-base.pub"
+  printf "Fetched base public key from %s\\n" "${HTTPS_MIRROR}"
 fi
 
-# Fetch kernel, PXE bootstrap program, and file sets from untrusted
-# rsync mirror.
-if [ ! -d mirror/pub/OpenBSD/6.7/amd64 ] ;
+# Fetch kernel, PXE bootstrap program, and file sets from untrusted rsync
+# mirror.
+if [ ! -d mirror/pub/OpenBSD/6.7/amd64 ]
 then
   mkdir -p tmp
+  printf "Fetching installation files ...\\n"
   rsync --recursive --delete --quiet \
     "${RSYNC_MIRROR}6.7/amd64/SHA256" \
     "${RSYNC_MIRROR}6.7/amd64/SHA256.sig" \
@@ -54,10 +56,11 @@ then
       -x SHA256.sig \
       -- bsd bsd.* pxeboot *67.tgz )
   mv tmp mirror/pub/OpenBSD/6.7/amd64
+  printf "Fetched kernel, PXE bootstrap program, and file sets from %s\\n" "${RSYNC_MIRROR}"
 fi
 
 # Create autoinstall configuration if not exists.
-if [ ! -e mirror/install.conf ] ;
+if [ ! -e mirror/install.conf ]
 then
   cat << EOF > mirror/install.conf
 Change the default console to com0 = yes
@@ -77,10 +80,11 @@ Set name(s) = site67.tgz
 Checksum test for site67.tgz failed. Continue anyway = yes
 Unverified sets: site67.tgz. Continue without verification = yes
 EOF
+  printf "Created example response file for autoinstall(8) at ./mirror/install.conf\\n"
 fi
 
 # Create disklabel configuration if not exists.
-if [ ! -e mirror/disklabel ] ;
+if [ ! -e mirror/disklabel ]
 then
   cat << EOF > mirror/disklabel
 /            2G
@@ -94,10 +98,11 @@ swap         8G
 /usr/obj     1M
 /home        4G
 EOF
+  printf "Created example disklabel(8) template at ./mirror/disklabel.conf\\n"
 fi
 
 # Create site-specific file set if not exists.
-if [ ! -d site ] ;
+if [ ! -d site ]
 then
   mkdir site
   cat << EOF > site/install.site
@@ -108,11 +113,12 @@ echo "permit nopass keepenv :wheel" > /etc/doas.conf
 #echo "syspatch && shutdown -r now" >> /etc/rc.firsttime
 EOF
   chmod +x site/install.site
+  printf "Created example site-specific file set at ./site\\n"
 fi
 
 # Package site-specific file set if not exists or changed.
 site_dir_changed="$( find site -exec stat -c %Y {} \; | sort -r | head -n 1 )"
-if [ ! -e mirror/pub/OpenBSD/6.7/amd64/site67.tgz ] || [ "$( stat -c %Y mirror/pub/OpenBSD/6.7/amd64/site67.tgz )" -lt "${site_dir_changed}" ] ;
+if [ ! -e mirror/pub/OpenBSD/6.7/amd64/site67.tgz ] || [ "$( stat -c %Y mirror/pub/OpenBSD/6.7/amd64/site67.tgz )" -lt "${site_dir_changed}" ]
 then
   rm -f mirror/pub/OpenBSD/6.7/amd64/site67.tgz
   ( cd site && tar -czf ../mirror/pub/OpenBSD/6.7/amd64/site67.tgz . )
@@ -120,7 +126,7 @@ then
 fi
 
 # Create TFTP directory if not exists.
-if [ ! -d tftp ] ;
+if [ ! -d tftp ]
 then
   mkdir tftp
   ln -s ../mirror/pub/OpenBSD/6.7/amd64/pxeboot tftp/auto_install
@@ -131,41 +137,44 @@ stty com0 115200
 set tty com0
 boot tftp:/bsd.rd
 EOF
+  printf "Created example boot(8) configuration at ./tftp/etc/boot.conf\\n"
 fi
 
 # Remove existing disk image if configuration changed.
-if [ -e "${DISK_FILE}" ] ;
+if [ -e "${DISK_FILE}" ]
 then
   vm_created="$( stat -c %W "${DISK_FILE}" )"
   for f in mirror/install.conf mirror/disklabel mirror/pub/OpenBSD/6.7/amd64/site67.tgz tftp/etc/boot.conf
   do
-    if [ "${vm_created}" -lt "$( stat -c %Y "$f" )" ] ;
+    if [ "${vm_created}" -lt "$( stat -c %Y "$f" )" ]
     then
-      ( >&2 printf "%s changed. Recreating virtual machine." "$f" )
+      printf "Re-creating virtual machine due to changed configuration: %s\\n" "$f"
       rm "${DISK_FILE}"
     fi
   done
 fi
 
 # Create disk image if not exists.
-if [ ! -e "${DISK_FILE}" ] ;
+if [ ! -e "${DISK_FILE}" ]
 then
-  qemu-img create -f qcow2 "${DISK_FILE}" "${DISK_SIZE}"
+  qemu-img create -q -f qcow2 "${DISK_FILE}" "${DISK_SIZE}"
+  printf "Created %s copy-on-write disk image at %s\\n" "${DISK_SIZE}" "${DISK_FILE}"
 fi
 
 # Wait until ./mirror is served at http://127.0.0.1:8080/.
-while [ ! "$( curl --silent --location --write-out '%{http_code}\n' --output /dev/null http://127.0.0.1:8080/install.conf )" = 200 ] ;
+while [ ! "$( curl --silent --location --write-out '%{http_code}\n' --output /dev/null http://127.0.0.1:8080/install.conf )" = 200 ]
 do
-  ( >&2 printf "Please serve the directory ./mirror/ at http://127.0.0.1:8080/.\n" )
+  ( >&2 printf "Please serve the directory ./mirror at http://127.0.0.1:8080/\n" )
   sleep 5
 done
 
 # Auto-install OpenBSD.
+printf "Starting virtual machine ...\\n"
 qemu-system-x86_64 \
   -enable-kvm \
   -m "${MEMORY_SIZE}" \
   -smp "cpus=${CPU_COUNT}" \
   -device e1000,netdev=n1 \
-  -netdev "user,id=n1,hostname=openbsd-vm,tftp-server-name=10.0.2.1,tftp=tftp,bootfile=auto_install,hostfwd=tcp::2222-:22,guestfwd=tcp:10.0.2.1:80-cmd:socat - tcp:127.0.0.1:8080" \
+  -netdev "user,id=n1,hostname=openbsd-vm,tftp-server-name=10.0.2.1,tftp=tftp,bootfile=auto_install,hostfwd=tcp::2222-:22,guestfwd=tcp:10.0.2.1:80-cmd:socat STDIO TCP4:127.0.0.1:8080" \
   -drive "file=${DISK_FILE},media=disk,if=virtio" \
   -nographic

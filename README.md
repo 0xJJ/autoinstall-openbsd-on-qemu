@@ -1,6 +1,6 @@
 # Auto-install OpenBSD on QEMU
 
-This repository hosts a POSIX shell script to auto-install OpenBSD/amd64 6.6 to
+This repository hosts a POSIX shell script to auto-install OpenBSD/amd64 6.7 to
 copy-on-write disk image using QEMU. The script is intended to run on Linux. If
 you already have a running OpenBSD installation, you should consider to use
 OpenBSD's own hypervisor [vmm(4)](https://man.openbsd.org/vmm) instead of QEMU
@@ -31,7 +31,7 @@ The following command installs these dependencies on Arch Linux:
 
 ## Usage
 
-Execute the following command to auto-install OpenBSD/amd64 6.6 to a new disk
+Execute the following command to auto-install OpenBSD/amd64 6.7 to a new disk
 image `disk.qcow2` in the current directory.
 
     ./run

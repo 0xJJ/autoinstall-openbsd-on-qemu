@@ -1,6 +1,6 @@
 #! /bin/sh
 
-# Auto-install OpenBSD/amd64 6.6 to a copy-on-write disk image using QEMU.
+# Auto-install OpenBSD/amd64 6.7 to a copy-on-write disk image using QEMU.
 #
 # Copyright (c) 2020 Stefan Kreutz <mail@skreutz.com>
 
@@ -21,23 +21,23 @@ do
 done
 
 # Download and verify official installation image and file sets.
-mkdir -p mirror/pub/OpenBSD/6.6
-if [ ! -e mirror/pub/OpenBSD/6.6/openbsd-66-base.pub ] ;
+mkdir -p mirror/pub/OpenBSD/6.7
+if [ ! -e mirror/pub/OpenBSD/6.7/openbsd-67-base.pub ] ;
 then
   curl \
-    --output mirror/pub/OpenBSD/6.6/openbsd-66-base.pub \
+    --output mirror/pub/OpenBSD/6.7/openbsd-67-base.pub \
     --silent \
-    https://ftp.openbsd.org/pub/OpenBSD/6.6/openbsd-66-base.pub
+    https://ftp.openbsd.org/pub/OpenBSD/6.7/openbsd-67-base.pub
 fi
-if [ ! -d mirror/pub/OpenBSD/6.6/amd64 ] ;
+if [ ! -d mirror/pub/OpenBSD/6.7/amd64 ] ;
 then
   mkdir -p tmp
   rsync --recursive --delete --quiet \
-    rsync://ftp.halifax.rwth-aachen.de/openbsd/6.6/amd64/ \
+    rsync://ftp.halifax.rwth-aachen.de/openbsd/6.7/amd64/ \
     tmp/
   ( cd tmp && \
-    signify -C -q -p ../mirror/pub/OpenBSD/6.6/openbsd-66-base.pub -x SHA256.sig )
-  mv tmp mirror/pub/OpenBSD/6.6/amd64
+    signify -C -q -p ../mirror/pub/OpenBSD/6.7/openbsd-67-base.pub -x SHA256.sig )
+  mv tmp mirror/pub/OpenBSD/6.7/amd64
 fi
 
 # Create autoinstall configuration if not exists.
@@ -58,9 +58,9 @@ Location of sets = http
 HTTP Server = 10.0.2.1
 Unable to connect using https. Use http instead = yes
 URL to autopartitioning template for disklabel = http://10.0.2.1/disklabel
-Set name(s) = site66.tgz
-Checksum test for site66.tgz failed. Continue anyway = yes
-Unverified sets: site66.tgz. Continue without verification = yes
+Set name(s) = site67.tgz
+Checksum test for site67.tgz failed. Continue anyway = yes
+Unverified sets: site67.tgz. Continue without verification = yes
 EOF
 fi
 
@@ -98,19 +98,19 @@ fi
 
 # Package site-specific file set if not exists or changed.
 site_dir_changed="$( find site -exec stat -c %Y {} \; | sort -r | head -n 1 )"
-if [ ! -e mirror/pub/OpenBSD/6.6/amd64/site66.tgz ] || [ "$( stat -c %Y mirror/pub/OpenBSD/6.6/amd64/site66.tgz )" -lt "${site_dir_changed}" ] ;
+if [ ! -e mirror/pub/OpenBSD/6.7/amd64/site67.tgz ] || [ "$( stat -c %Y mirror/pub/OpenBSD/6.7/amd64/site67.tgz )" -lt "${site_dir_changed}" ] ;
 then
-  rm -f mirror/pub/OpenBSD/6.6/amd64/site66.tgz
-  ( cd site && tar -czf ../mirror/pub/OpenBSD/6.6/amd64/site66.tgz . )
-  ( cd mirror/pub/OpenBSD/6.6/amd64 && ls -l > index.txt )
+  rm -f mirror/pub/OpenBSD/6.7/amd64/site67.tgz
+  ( cd site && tar -czf ../mirror/pub/OpenBSD/6.7/amd64/site67.tgz . )
+  ( cd mirror/pub/OpenBSD/6.7/amd64 && ls -l > index.txt )
 fi
 
 # Create TFTP directory if not exists.
 if [ ! -d tftp ] ;
 then
   mkdir tftp
-  ln -s ../mirror/pub/OpenBSD/6.6/amd64/pxeboot tftp/auto_install
-  ln -s ../mirror/pub/OpenBSD/6.6/amd64/bsd.rd tftp/bsd.rd
+  ln -s ../mirror/pub/OpenBSD/6.7/amd64/pxeboot tftp/auto_install
+  ln -s ../mirror/pub/OpenBSD/6.7/amd64/bsd.rd tftp/bsd.rd
   mkdir tftp/etc
   cat << EOF > tftp/etc/boot.conf
 stty com0 115200
@@ -123,7 +123,7 @@ fi
 if [ -e "${DISK_FILE}" ] ;
 then
   vm_created="$( stat -c %W "${DISK_FILE}" )"
-  for f in mirror/install.conf mirror/disklabel mirror/pub/OpenBSD/6.6/amd64/site66.tgz tftp/etc/boot.conf
+  for f in mirror/install.conf mirror/disklabel mirror/pub/OpenBSD/6.7/amd64/site67.tgz tftp/etc/boot.conf
   do
     if [ "${vm_created}" -lt "$( stat -c %Y "$f" )" ] ;
     then

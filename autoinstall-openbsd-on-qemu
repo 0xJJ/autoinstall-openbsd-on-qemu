@@ -2,22 +2,49 @@
 
 # Auto-install OpenBSD/amd64 6.7 on QEMU.
 #
+# First published at https://www.skreutz.com/posts/autoinstall-openbsd-on-qemu/
+# on 22 July 2020.
+#
 # Copyright (c) 2020 Stefan Kreutz <mail@skreutz.com>
+#
+# Permission to use, copy, modify, and distribute this software for any purpose
+# with or without fee is hereby granted, provided that the above copyright
+# notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+# REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+# INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+# LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+# OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+# PERFORMANCE OF THIS SOFTWARE.
 
 set -o errexit
 set -o nounset
 
-# Accept parameters from environment.
-SSH_KEY="${SSH_KEY-${HOME}/.ssh/id_rsa.pub}"
+# Trusted HTTPS OpenBSD mirror to fetch the base public key from.
 HTTPS_MIRROR="${HTTPS_MIRROR-https://ftp.openbsd.org/pub/OpenBSD/}"
+
+# Untrusted rsync OpenBSD mirror.
 RSYNC_MIRROR="${RSYNC_MIRROR-rsync://ftp.halifax.rwth-aachen.de/openbsd/}"
+
+# File name of the disk image.
 DISK_FILE="${DISK_FILE-disk.qcow2}"
+
+# Size of the disk image.
 DISK_SIZE="${DISK_SIZE-24G}"
+
+# Number of virtual CPUs.
 CPU_COUNT="${CPU_COUNT-4}"
+
+# Size of virtual memory.
 MEMORY_SIZE="${MEMORY_SIZE-4G}"
 
-# Fail early on missing dependencies.
-for cmd in qemu-img qemu-system-x86_64 curl signify rsync ssh socat
+# File name of the public SSH key to authorize.
+SSH_KEY="${SSH_KEY-${HOME}/.ssh/id_rsa.pub}"
+
+# Check required commands.
+for cmd in curl qemu-img qemu-system-x86_64 rsync signify socat ssh
 do
   if ! command -v "${cmd}" >/dev/null
   then
@@ -43,14 +70,24 @@ if [ ! -d mirror/pub/OpenBSD/6.7/amd64 ]
 then
   mkdir -p tmp
   printf "Fetching installation files ...\\n"
-  rsync --recursive --delete --quiet \
-    "${RSYNC_MIRROR}6.7/amd64/SHA256" \
-    "${RSYNC_MIRROR}6.7/amd64/SHA256.sig" \
-    "${RSYNC_MIRROR}6.7/amd64/bsd" \
-    "${RSYNC_MIRROR}6.7/amd64/bsd.*" \
-    "${RSYNC_MIRROR}6.7/amd64/pxeboot" \
-    "${RSYNC_MIRROR}6.7/amd64/*67.tgz" \
-    tmp/
+  rsync --archive --files-from=- --quiet \
+    "${RSYNC_MIRROR}6.7/amd64/" \
+    tmp/ \
+    << EOF
+SHA256.sig
+base67.tgz
+bsd
+bsd.mp
+bsd.rd
+comp67.tgz
+game67.tgz
+man67.tgz
+pxeboot
+xbase67.tgz
+xfont67.tgz
+xserv67.tgz
+xshare67.tgz
+EOF
   ( cd tmp && signify -C -q \
       -p ../mirror/pub/OpenBSD/6.7/openbsd-67-base.pub \
       -x SHA256.sig \
@@ -59,7 +96,7 @@ then
   printf "Fetched kernel, PXE bootstrap program, and file sets from %s\\n" "${RSYNC_MIRROR}"
 fi
 
-# Create autoinstall configuration if not exists.
+# Create autoinstall(8) configuration if not exists.
 if [ ! -e mirror/install.conf ]
 then
   cat << EOF > mirror/install.conf
@@ -83,7 +120,7 @@ EOF
   printf "Created example response file for autoinstall(8) at ./mirror/install.conf\\n"
 fi
 
-# Create disklabel configuration if not exists.
+# Create disklabel(8) configuration if not exists.
 if [ ! -e mirror/disklabel ]
 then
   cat << EOF > mirror/disklabel
@@ -107,9 +144,17 @@ then
   mkdir site
   cat << EOF > site/install.site
 #! /bin/ksh
+
 set -o errexit
+
+# Reset OpenBSD mirror server used by pkg_add(1) and other commands.
 echo "https://cdn.openbsd.org/pub/OpenBSD" > /etc/installurl
+
+# Permit user group wheel to run any command as root without entering their
+# password using doas(1).
 echo "permit nopass keepenv :wheel" > /etc/doas.conf
+
+# Patch the base system on the first boot.
 #echo "syspatch && shutdown -r now" >> /etc/rc.firsttime
 EOF
   chmod +x site/install.site
@@ -172,9 +217,9 @@ done
 printf "Starting virtual machine ...\\n"
 qemu-system-x86_64 \
   -enable-kvm \
-  -m "${MEMORY_SIZE}" \
   -smp "cpus=${CPU_COUNT}" \
+  -m "${MEMORY_SIZE}" \
+  -drive "file=${DISK_FILE},media=disk,if=virtio" \
   -device e1000,netdev=n1 \
   -netdev "user,id=n1,hostname=openbsd-vm,tftp-server-name=10.0.2.1,tftp=tftp,bootfile=auto_install,hostfwd=tcp::2222-:22,guestfwd=tcp:10.0.2.1:80-cmd:socat STDIO TCP4:127.0.0.1:8080" \
-  -drive "file=${DISK_FILE},media=disk,if=virtio" \
   -nographic

@@ -26,7 +26,7 @@ set -o nounset
 HTTPS_MIRROR="${HTTPS_MIRROR-https://ftp.openbsd.org/pub/OpenBSD/}"
 
 # Untrusted rsync OpenBSD mirror.
-RSYNC_MIRROR="${RSYNC_MIRROR-rsync://ftp.halifax.rwth-aachen.de/openbsd/}"
+RSYNC_MIRROR="${RSYNC_MIRROR-rsync://mirror.leaseweb.com/openbsd/}"
 
 # File name of the disk image.
 DISK_FILE="${DISK_FILE-disk.qcow2}"

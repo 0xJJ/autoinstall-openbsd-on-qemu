@@ -32,7 +32,7 @@ RSYNC_MIRROR="${RSYNC_MIRROR-rsync://mirror.leaseweb.com/openbsd/}"
 DISK_FILE="${DISK_FILE-disk.qcow2}"
 
 # Size of the disk image.
-DISK_SIZE="${DISK_SIZE-24G}"
+DISK_SIZE="${DISK_SIZE-64G}"
 
 # Number of virtual CPUs.
 CPU_COUNT="${CPU_COUNT-4}"
@@ -121,19 +121,20 @@ EOF
 fi
 
 # Create disklabel(8) configuration if not exists.
+# Assume disk size of at least 54G.
 if [ ! -e mirror/disklabel ]
 then
   cat << EOF > mirror/disklabel
-/            2G
+/            1G
 swap         8G
-/tmp         1G
-/var         1G
-/usr         2G
-/usr/X11R6 500M
-/usr/local   4G
-/usr/src     1M
-/usr/obj     1M
-/home        4G
+/tmp         4G
+/var         4G
+/usr         6G
+/usr/X11R6   1G
+/usr/local   20G
+/usr/src     3G
+/usr/obj     6G
+/home        1G-*
 EOF
   printf "Created example disklabel(8) template at ./mirror/disklabel.conf\\n"
 fi

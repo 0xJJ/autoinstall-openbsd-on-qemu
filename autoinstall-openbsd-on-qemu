@@ -110,9 +110,9 @@ Password for user = *************
 Public ssh key for user = $( cat "${SSH_KEY}" )
 What timezone are you in = UTC
 Location of sets = http
-HTTP Server = 10.0.2.1
+HTTP Server = 10.0.2.2
 Unable to connect using https. Use http instead = yes
-URL to autopartitioning template for disklabel = http://10.0.2.1/disklabel
+URL to autopartitioning template for disklabel = http://10.0.2.2/disklabel
 Set name(s) = site73.tgz
 Checksum test for site73.tgz failed. Continue anyway = yes
 Unverified sets: site73.tgz. Continue without verification = yes
@@ -207,14 +207,15 @@ then
   printf "Created %s copy-on-write disk image at %s\\n" "${DISK_SIZE}" "${DISK_FILE}"
 fi
 
-# Wait until ./mirror is served at http://127.0.0.1:8080/.
-while [ ! "$( curl --silent --location --write-out '%{http_code}\n' --output /dev/null http://127.0.0.1:8080/install.conf )" = 200 ]
+# Wait until ./mirror is served at http://127.0.0.1/.
+while [ ! "$( curl --silent --location --write-out '%{http_code}\n' --output /dev/null http://127.0.0.1/install.conf )" = 200 ]
 do
-  ( >&2 printf "Please serve the directory ./mirror at http://127.0.0.1:8080/\n" )
+  ( >&2 printf "Please serve the directory ./mirror at http://127.0.0.1/\n" )
   sleep 5
 done
 
 # Auto-install OpenBSD.
+# TODO: Forward host (10.0.2.2) port 80 to host port 8080, and adapt the above check
 printf "Starting virtual machine ...\\n"
 qemu-system-x86_64 \
   -enable-kvm \
@@ -222,5 +223,5 @@ qemu-system-x86_64 \
   -m "${MEMORY_SIZE}" \
   -drive "file=${DISK_FILE},media=disk,if=virtio" \
   -device e1000,netdev=n1 \
-  -netdev "user,id=n1,hostname=openbsd-vm,tftp-server-name=10.0.2.1,tftp=tftp,bootfile=auto_install,hostfwd=tcp::2222-:22,guestfwd=tcp:10.0.2.1:80-cmd:socat STDIO TCP4:127.0.0.1:8080" \
+  -netdev "user,id=n1,hostname=openbsd-vm,tftp=tftp,bootfile=auto_install,hostfwd=tcp::2222-:22" \
   -nographic

@@ -35,7 +35,7 @@ DISK_FILE="${DISK_FILE-disk.qcow2}"
 DISK_SIZE="${DISK_SIZE-64G}"
 
 # Number of virtual CPUs.
-CPU_COUNT="${CPU_COUNT-4}"
+CPU_COUNT="${CPU_COUNT-$(grep -c ^processor /proc/cpuinfo)}"
 
 # Size of virtual memory.
 MEMORY_SIZE="${MEMORY_SIZE-4G}"

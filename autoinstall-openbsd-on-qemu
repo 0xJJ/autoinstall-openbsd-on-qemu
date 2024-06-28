@@ -41,7 +41,7 @@ CPU_COUNT="${CPU_COUNT-$(grep -c ^processor /proc/cpuinfo)}"
 MEMORY_SIZE="${MEMORY_SIZE-4G}"
 
 # File name of the public SSH key to authorize.
-SSH_KEY="${SSH_KEY-${HOME}/.ssh/id_rsa.pub}"
+SSH_KEY="${SSH_KEY-${HOME}/.ssh/id_ed25519.pub}"
 
 # Check required commands.
 for cmd in curl qemu-img qemu-system-x86_64 rsync signify socat ssh

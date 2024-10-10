@@ -1,6 +1,6 @@
 #! /bin/sh
 
-# Auto-install OpenBSD/amd64 7.5 on QEMU.
+# Auto-install OpenBSD/amd64 7.6 on QEMU.
 #
 # First published at https://www.skreutz.com/posts/autoinstall-openbsd-on-qemu/
 # on 22 July 2020.
@@ -23,9 +23,11 @@ set -o errexit
 set -o nounset
 
 # Trusted HTTPS OpenBSD mirror to fetch the base public key from.
+# See <https://www.openbsd.org/ftp.html#http>.
 HTTPS_MIRROR="${HTTPS_MIRROR-https://ftp.openbsd.org/pub/OpenBSD/}"
 
 # Untrusted rsync OpenBSD mirror.
+# See <https://www.openbsd.org/ftp.html#rsync>.
 RSYNC_MIRROR="${RSYNC_MIRROR-rsync://mirror.leaseweb.com/openbsd/}"
 
 # File name of the disk image.
@@ -54,45 +56,46 @@ do
 done
 
 # Fetch base public key from trusted HTTPS mirror.
-mkdir -p mirror/pub/OpenBSD/7.5
-if [ ! -e mirror/pub/OpenBSD/7.5/openbsd-75-base.pub ]
+mkdir -p mirror/pub/OpenBSD/7.6
+if [ ! -e mirror/pub/OpenBSD/7.6/openbsd-76-base.pub ]
 then
   curl \
     --silent \
-    --output mirror/pub/OpenBSD/7.5/openbsd-75-base.pub \
-    "${HTTPS_MIRROR}7.5/openbsd-75-base.pub"
+    --output mirror/pub/OpenBSD/7.6/openbsd-76-base.pub \
+    "${HTTPS_MIRROR}7.6/openbsd-76-base.pub"
   printf "Fetched base public key from %s\\n" "${HTTPS_MIRROR}"
 fi
 
 # Fetch kernel, PXE bootstrap program, and file sets from untrusted rsync
 # mirror.
-if [ ! -d mirror/pub/OpenBSD/7.5/amd64 ]
+if [ ! -d mirror/pub/OpenBSD/7.6/amd64 ]
 then
   mkdir -p tmp
   printf "Fetching installation files ...\\n"
   rsync --archive --files-from=- --quiet \
-    "${RSYNC_MIRROR}7.5/amd64/" \
+    "${RSYNC_MIRROR}7.6/amd64/" \
     tmp/ \
     << EOF
 SHA256.sig
-base75.tgz
+base76.tgz
 bsd
 bsd.mp
 bsd.rd
-comp75.tgz
-game75.tgz
-man75.tgz
+comp76.tgz
+game76.tgz
+man76.tgz
 pxeboot
-xbase75.tgz
-xfont75.tgz
-xserv75.tgz
-xshare75.tgz
+xbase76.tgz
+xfont76.tgz
+xserv76.tgz
+xshare76.tgz
+BUILDINFO
 EOF
   ( cd tmp && signify -C -q \
-      -p ../mirror/pub/OpenBSD/7.5/openbsd-75-base.pub \
+      -p ../mirror/pub/OpenBSD/7.6/openbsd-76-base.pub \
       -x SHA256.sig \
-      -- bsd bsd.* pxeboot *75.tgz )
-  mv tmp mirror/pub/OpenBSD/7.5/amd64
+      -- bsd bsd.* pxeboot *76.tgz )
+  mv tmp mirror/pub/OpenBSD/7.6/amd64
   printf "Fetched kernel, PXE bootstrap program, and file sets from %s\\n" "${RSYNC_MIRROR}"
 fi
 
@@ -113,9 +116,9 @@ Location of sets = http
 HTTP Server = 10.0.2.2
 Unable to connect using https. Use http instead = yes
 URL to autopartitioning template for disklabel = http://10.0.2.2/disklabel
-Set name(s) = site75.tgz
-Checksum test for site75.tgz failed. Continue anyway = yes
-Unverified sets: site75.tgz. Continue without verification = yes
+Set name(s) = site76.tgz
+Checksum test for site76.tgz failed. Continue anyway = yes
+Unverified sets: site76.tgz. Continue without verification = yes
 EOF
   printf "Created example response file for autoinstall(8) at ./mirror/install.conf\\n"
 fi
@@ -164,19 +167,19 @@ fi
 
 # Package site-specific file set if not exists or changed.
 site_dir_changed="$( find site -exec stat -c %Y {} \; | sort -r | head -n 1 )"
-if [ ! -e mirror/pub/OpenBSD/7.5/amd64/site75.tgz ] || [ "$( stat -c %Y mirror/pub/OpenBSD/7.5/amd64/site75.tgz )" -lt "${site_dir_changed}" ]
+if [ ! -e mirror/pub/OpenBSD/7.6/amd64/site76.tgz ] || [ "$( stat -c %Y mirror/pub/OpenBSD/7.6/amd64/site76.tgz )" -lt "${site_dir_changed}" ]
 then
-  rm -f mirror/pub/OpenBSD/7.5/amd64/site75.tgz
-  ( cd site && tar -czf ../mirror/pub/OpenBSD/7.5/amd64/site75.tgz . )
-  ( cd mirror/pub/OpenBSD/7.5/amd64 && ls -l > index.txt )
+  rm -f mirror/pub/OpenBSD/7.6/amd64/site76.tgz
+  ( cd site && tar -czf ../mirror/pub/OpenBSD/7.6/amd64/site76.tgz . )
+  ( cd mirror/pub/OpenBSD/7.6/amd64 && ls -l > index.txt )
 fi
 
 # Create TFTP directory if not exists.
 if [ ! -d tftp ]
 then
   mkdir tftp
-  ln -s ../mirror/pub/OpenBSD/7.5/amd64/pxeboot tftp/auto_install
-  ln -s ../mirror/pub/OpenBSD/7.5/amd64/bsd.rd tftp/bsd.rd
+  ln -s ../mirror/pub/OpenBSD/7.6/amd64/pxeboot tftp/auto_install
+  ln -s ../mirror/pub/OpenBSD/7.6/amd64/bsd.rd tftp/bsd.rd
   mkdir tftp/etc
   cat << EOF > tftp/etc/boot.conf
 stty com0 115200
@@ -190,7 +193,7 @@ fi
 if [ -e "${DISK_FILE}" ]
 then
   vm_created="$( stat -c %W "${DISK_FILE}" )"
-  for f in mirror/install.conf mirror/disklabel mirror/pub/OpenBSD/7.5/amd64/site75.tgz tftp/etc/boot.conf
+  for f in mirror/install.conf mirror/disklabel mirror/pub/OpenBSD/7.6/amd64/site76.tgz tftp/etc/boot.conf
   do
     if [ "${vm_created}" -lt "$( stat -c %Y "$f" )" ]
     then

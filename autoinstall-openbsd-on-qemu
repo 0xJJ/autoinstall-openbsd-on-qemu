@@ -206,7 +206,7 @@ fi
 # Create disk image if not exists.
 if [ ! -e "${DISK_FILE}" ]
 then
-  qemu-img create -q -f qcow2 "${DISK_FILE}" "${DISK_SIZE}"
+  qemu-img create -q -f qcow2 "${DISK_FILE}" -o nocow=on "${DISK_SIZE}"
   printf "Created %s copy-on-write disk image at %s\\n" "${DISK_SIZE}" "${DISK_FILE}"
 fi
 

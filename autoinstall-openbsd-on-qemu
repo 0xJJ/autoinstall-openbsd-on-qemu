@@ -203,19 +203,18 @@ then
   done
 fi
 
-# Create disk image if not exists.
+# Create disk image if not exists, and wait until mirror is served.
 if [ ! -e "${DISK_FILE}" ]
 then
   qemu-img create -q -f qcow2 "${DISK_FILE}" -o nocow=on "${DISK_SIZE}"
   printf "Created %s copy-on-write disk image at %s\\n" "${DISK_SIZE}" "${DISK_FILE}"
-fi
 
-# Wait until ./mirror is served at http://127.0.0.1/.
-while [ ! "$( curl --silent --location --write-out '%{http_code}\n' --output /dev/null http://127.0.0.1/install.conf )" = 200 ]
-do
-  ( >&2 printf "Please serve the directory ./mirror at http://127.0.0.1/\n" )
-  sleep 5
-done
+  while [ ! "$( curl --silent --location --write-out '%{http_code}\n' --output /dev/null http://127.0.0.1/install.conf )" = 200 ]
+  do
+    ( >&2 printf "Please serve the directory ./mirror at http://127.0.0.1/ (port 80)\n" )
+    sleep 5
+  done
+fi
 
 # Auto-install OpenBSD.
 printf "Starting virtual machine ...\\n"

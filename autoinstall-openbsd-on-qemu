@@ -272,7 +272,7 @@ LD_PRELOAD="$PWD/qemu_patch.so" qemu-system-x86_64 \
   -smp "cpus=${CPU_COUNT}" \
   -m "${MEMORY_SIZE}" \
   -drive "file=${DISK_FILE},media=disk,if=virtio" \
-  -device e1000,netdev=n1 \
+  -device virtio-net-pci,netdev=n1 \
   -netdev "user,id=n1,hostname=openbsd-vm,tftp=tftp,bootfile=auto_install,hostfwd=tcp::2222-:22" \
   -nographic
 

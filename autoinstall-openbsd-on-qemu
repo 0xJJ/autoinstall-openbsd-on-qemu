@@ -49,8 +49,11 @@ MEMORY_SIZE="${MEMORY_SIZE-4G}"
 # File name of the public SSH key to authorize.
 SSH_KEY="${SSH_KEY-${HOME}/.ssh/id_ed25519.pub}"
 
+# C compiler
+CC="${CC-gcc}"
+
 # Check required commands.
-for cmd in curl qemu-img qemu-system-x86_64 rsync signify socat ssh
+for cmd in curl qemu-img qemu-system-x86_64 rsync signify ssh "${CC}" python3
 do
   if ! command -v "${cmd}" >/dev/null
   then
@@ -207,22 +210,64 @@ then
   done
 fi
 
-# Create disk image if not exists, and wait until mirror is served.
+# Create disk image if not exists.
 if [ ! -e "${DISK_FILE}" ]
 then
   qemu-img create -q -f qcow2 "${DISK_FILE}" -o nocow=on "${DISK_SIZE}"
   printf "Created %s copy-on-write disk image at %s\\n" "${DISK_SIZE}" "${DISK_FILE}"
-
-  while [ ! "$( curl --silent --location --write-out '%{http_code}\n' --output /dev/null http://127.0.0.1/install.conf )" = 200 ]
-  do
-    ( >&2 printf "Please serve the directory ./mirror at http://127.0.0.1/ (port 80)\n" )
-    sleep 5
-  done
 fi
 
-# Auto-install OpenBSD.
+# Serve mirror at unprivileged port 8080.
+python3 \
+  -m http.server \
+  --directory mirror \
+  --bind 127.0.0.1 8080 &
+server_pid=$!
+
+# Add cleanup trap for http server.
+trap 'kill "$server_pid" 2>/dev/null' INT TERM EXIT
+
+# Compile patch to overwrite connect() to redirect request for port 80 to 8080
+if [ ! -e qemu_patch.so ]
+then
+  ${CC} -Wall -fPIC -shared -ldl -o qemu_patch.so -xc - << EOF
+  #define _GNU_SOURCE
+  #include <arpa/inet.h>
+  #include <dlfcn.h>
+  #include <netinet/in.h>
+  #include <stdio.h>
+  #include <string.h>
+  #include <sys/socket.h>
+
+  // Function pointer to the original connect()
+  int (*original_connect)(int, const struct sockaddr *, socklen_t) = NULL;
+
+  int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    // Load the original connect()
+    if (!original_connect) {
+      original_connect = dlsym(RTLD_NEXT, "connect");
+    }
+
+    // Check if the target is 127.0.0.1:80 and change port to 8080
+    if (addr->sa_family == AF_INET) {
+      struct sockaddr_in *addr_in = (struct sockaddr_in *)addr;
+
+      if (ntohs(addr_in->sin_port) == 80 &&
+          addr_in->sin_addr.s_addr == htonl(INADDR_LOOPBACK)) {
+        fprintf(stderr,
+                "[LD_PRELOAD] On host redirecting port 80 to port 8080\n");
+        addr_in->sin_port = htons(8080);
+      }
+    }
+
+    return original_connect(sockfd, addr, addrlen);
+  }
+EOF
+fi
+
+# Auto-install OpenBSD. Patch qemu with LD_PRELOAD.
 printf "Starting virtual machine ...\\n"
-qemu-system-x86_64 \
+LD_PRELOAD="$PWD/qemu_patch.so" qemu-system-x86_64 \
   -enable-kvm \
   -smp "cpus=${CPU_COUNT}" \
   -m "${MEMORY_SIZE}" \
@@ -230,3 +275,7 @@ qemu-system-x86_64 \
   -device e1000,netdev=n1 \
   -netdev "user,id=n1,hostname=openbsd-vm,tftp=tftp,bootfile=auto_install,hostfwd=tcp::2222-:22" \
   -nographic
+
+# Shut down http sever.
+kill "$server_pid"
+wait "$server_pid" 2>/dev/null

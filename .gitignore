@@ -2,3 +2,4 @@ mirror
 tftp
 site
 disk.qcow2
+qemu_patch.so

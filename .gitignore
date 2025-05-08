@@ -3,3 +3,5 @@ tftp
 site
 disk.qcow2
 qemu_patch.so
+run-openbsd
+ssh-openbsd

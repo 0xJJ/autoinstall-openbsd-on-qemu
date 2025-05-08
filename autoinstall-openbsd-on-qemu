@@ -52,6 +52,12 @@ SSH_KEY="${SSH_KEY-${HOME}/.ssh/id_ed25519.pub}"
 # C compiler
 CC="${CC-gcc}"
 
+# Script to start VM after installation. If empty do not generate script.
+RUNSCRIPT=${RUNSCRIPT-run-openbsd}
+
+# Script to ssh into VM. If empty do not generate script.
+SSHSCRIPT=${SSHSCRIPT-ssh-openbsd}
+
 # Check required commands.
 for cmd in curl qemu-img qemu-system-x86_64 rsync signify ssh "${CC}" python3
 do
@@ -263,6 +269,39 @@ then
     return original_connect(sockfd, addr, addrlen);
   }
 EOF
+fi
+
+# Create run script for use after installation.
+if [ -n "${RUNSCRIPT}" ]
+then
+  cat << EOF > "${RUNSCRIPT}"
+#!/bin/sh
+qemu-system-x86_64 \
+  -enable-kvm \
+  -smp "cpus=${CPU_COUNT}" \
+  -m "${MEMORY_SIZE}" \
+  -drive "file=${DISK_FILE},media=disk,if=virtio" \
+  -device virtio-net-pci,netdev=n1 \
+  -netdev "user,id=n1,hostname=openbsd-vm,hostfwd=tcp::2222-:22" \
+  -nographic \
+  "\${@}"
+EOF
+  chmod +x "${RUNSCRIPT}"
+fi
+
+# Create ssh script.
+if [ -n "${SSHSCRIPT}" ]
+then
+  cat << EOF > "${SSHSCRIPT}"
+#!/bin/sh
+ssh \
+  -o "StrictHostKeyChecking no" \
+  -o "UserKnownHostsFile /dev/null" \
+  -o "Port 2222" \
+  puffy@127.0.0.1 \
+  "\${@}"
+EOF
+  chmod +x "${SSHSCRIPT}"
 fi
 
 # Auto-install OpenBSD. Patch qemu with LD_PRELOAD.

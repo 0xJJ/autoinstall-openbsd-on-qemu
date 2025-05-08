@@ -16,6 +16,19 @@ to port `8080`.
 * Make the OpenBSD version configurable via `OBSD_VERSION`.
 * Redirect port `80` to `8080` and run a Python http server on port `8080` as a
   subprocess.
+* Add scripts to start VM and ssh into it.
+
+## Usage
+Run `autoinstall-openbsd-on-qemu`. It will install OpenBSD automatically und
+create to wrapper scripts for QEMU and ssh. After installation you can start
+the QEMU VM with
+```
+./run-openbsd [arg, ...]
+```
+and ssh into the VM via
+```
+./ssh-openbsd [arg, ...]
+```
 
 ## Potential future changes
 

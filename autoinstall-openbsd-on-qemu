@@ -1,6 +1,6 @@
 #! /bin/sh
 
-# Auto-install OpenBSD/amd64 7.7 on QEMU.
+# Auto-install OpenBSD/amd64 on QEMU.
 #
 # First published at https://www.skreutz.com/posts/autoinstall-openbsd-on-qemu/
 # on 22 July 2020.
